@@ -11,13 +11,15 @@ const cheerio = require('cheerio');
 const request = require('request');
 const client = require('cheerio-httpcli');
 const path = require('path');
+const fs = require("fs");
+const json2csv = require("async-json2csv");
 
 /* 
  * port 열기
  */
 server.listen(3002, () => {
   console.log('start the server using the port 3002');
-}); 
+})
 
 app.get('/', (req, res, next) => {
   try { 
@@ -31,6 +33,9 @@ app.get('/', (req, res, next) => {
   }
 });
 
+/* 
+ * socket server open
+ */
 io.on('connection', (socket) => {
 
   let _result, result;
@@ -39,7 +44,7 @@ io.on('connection', (socket) => {
                     FROM ad, tag 
                     WHERE ad.ad_idx = tag.ad_idx 
                     AND tag.age = ? 
-                    AND (tag.gender = ? OR tag.gender is null) 
+                    AND (tag.gender = ? OR tag.gender is null)
                     AND (tag.emotion = ? OR tag.emotion is null)
                     AND (tag.time = ? OR tag.time is null)
                     AND (tag.season =? OR tag.season is null)
@@ -47,15 +52,16 @@ io.on('connection', (socket) => {
                     ORDER BY RAND() LIMIT 1
                     `
 
+  /* 
+ * get socket-event (python client1)
+ */
   socket.on('client1', async(data) => {
-    let url ='https://weather.naver.com/rgn/townWetr.nhn?naverRgnCd=09320105';
     let gender = data[1];
     let emotion = data[2];
     let _weather = data[3];
     let weather_text = data[4];
     let _dust = data[5];
-    let age, weather, season, time;
-    let weather_crawling, _age;
+    let _gender, _age, age, weather, season, time;
 
     /* 
      * weather data (dust, hot, cold)
@@ -94,85 +100,120 @@ io.on('connection', (socket) => {
      */
     let time_season = moment().format('MMMM');
 
-    if(time_season == 'November' || 'December' || 'January' ) {
+    if(time_season == 'November' || time_season == 'December' || time_season == 'January' ) {
       season = 'winter';
     }
-    else if(time_season == 'February' || 'March' || 'April' ) {
+    else if(time_season == 'February' || time_season == 'March' ||time_season == 'April' ) {
       season = 'spring';
     }
-    else if(time_season == 'May' || 'June' || 'July' ) {
+    else if(time_season == 'May' || time_season == 'June' || time_season == 'July' ) {
       season = 'summer';
     }
-    else if(time_season == 'August' || 'September' || 'October' ) {
+    else if(time_season == 'August' || time_season == 'September' || time_season == 'October' ) {
       season = 'autumn';
+    }
+
+    /* 
+     * emotion data (neutral => null)
+     */
+    if (emotion == 'neutral') {
+      emotion = null;
     }
 
     /* 
      * age data (112, 1318, 1939, 4069)
      */
     if (parseInt(data[0]) > 0 && parseInt(data[0]) < 13) {
-      age = '112'
+      age = '112';
     }
     else if (parseInt(data[0]) > 12 && parseInt(data[0]) < 19) {
-      age = '1318'
+      age = '1318';
     }
     else if (parseInt(data[0]) > 18 && parseInt(data[0]) < 40) {
-      age = '1939'
+      age = '1939';
     }
     else if (parseInt(data[0]) > 39) {
-      age = '4069'
+      age = '4069';
+    }
+
+    /* 
+     * age data to show html (0~10세, 10대, 20대, 30대, 40대, 50대, 60대, 70대)
+     */
+    if (parseInt(data[0]) > 0 && parseInt(data[0]) < 10) {
+      _age = '0~10세';
+    }
+    if (parseInt(data[0]) > 9 && parseInt(data[0]) < 20) {
+      _age = '10대';
+    }
+    else if (parseInt(data[0]) > 19 && parseInt(data[0]) < 30) {
+      _age = '20대';
+    }
+    else if (parseInt(data[0]) > 29 && parseInt(data[0]) < 40) {
+      _age = '30대';
+    }
+    else if (parseInt(data[0]) > 39 && parseInt(data[0]) < 50) {
+      _age = '40대';
+    }
+    else if (parseInt(data[0]) > 49 && parseInt(data[0]) < 60) {
+      _age = '50대';
+    }
+    else if (parseInt(data[0]) > 59 && parseInt(data[0]) < 70) {
+      _age = '60대';
+    }
+    else if (parseInt(data[0]) > 69) {
+      _age = '70대';
+    }
+
+    /* 
+     * gender data to show html (여성, 남성)
+     */
+    if (gender == 'f') {
+      _gender = '여성';
+    }
+    else if (gender == 'm') {
+      _gender = '남성';
     }
 
     /* 
      * DB connecttion
-     */ 
+     */
     _result = await db.query(selectQuery, [age, gender, emotion, time, season, weather]);
-
-    if (parseInt(data[0]) > 0 && parseInt(data[0]) < 10) {
-      _age = '0~10세'
-    }
-    if (parseInt(data[0]) > 9 && parseInt(data[0]) < 20) {
-      _age = '10대'
-    }
-    else if (parseInt(data[0]) > 19 && parseInt(data[0]) < 30) {
-      _age = '20대'
-    }
-    else if (parseInt(data[0]) > 29 && parseInt(data[0]) < 40) {
-      _age = '30대'
-    }
-    else if (parseInt(data[0]) > 39 && parseInt(data[0]) < 50) {
-      _age = '40대'
-    }
-    else if (parseInt(data[0]) > 49 && parseInt(data[0]) < 60) {
-      _age = '50대'
-    }
-    else if (parseInt(data[0]) > 59 && parseInt(data[0]) < 70) {
-      _age = '60대'
-    }
-    else if (parseInt(data[0]) > 69) {
-      _age = '70대'
-    }
-
-    if (gender == 'f') {
-      gender = '여성'
-    }
-    else if (gender == 'm') {
-      gender = '남성'
-    }
-
-    
+    console.log(_result)
+    /* 
+     * data object to show html
+     */
     if(_result != undefined) {
       const ad_age_gender = [];
       ad_age_gender.push(_result[0]['url']);
       ad_age_gender.push(_age);
-      ad_age_gender.push(gender);
+      ad_age_gender.push(_gender);
       ad_age_gender.push(_dust);
       ad_age_gender.push(_weather);
       ad_age_gender.push(weather_text);
       socket.broadcast.emit('ad', ad_age_gender);
-    }    
+
+      //csv파일로 만들기!
+      const manager = [];
+      const Info = {
+        '나이' :  _age,
+        '성별' : _gender,
+        '감정' : data[2],
+        '광고 이름' : _result[0]['name']
+      }
+      manager.push(Info);
+      const managerCsv = await json2csv({
+          data : manager,
+          fields : ['나이', '성별', '감정', '광고 이름'],
+          // header : true
+      });
+      fs.appendFileSync('../views/manager.csv', managerCsv);//경로 확인해보기! & appendFileSync랑 뭐가 다른지!
+    }
+    
   });
 
+ /* 
+  * get socket-event (html restart)
+  */
   socket.on('restart', () => {
     try{
       finish = true;
@@ -181,7 +222,7 @@ io.on('connection', (socket) => {
     }
     catch(err){
       console.log(err);
-      console.log("emit start Err")
+      console.log("emit start Err");
     }
   });
 
@@ -190,13 +231,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', function (err) {
-    console.log('Socket is disconnected!')
+    console.log('Socket is disconnected!');
   });
 
   socket.on('forceDisconnect', function() {
     socket.disconnect();
   })
-
 });
 
 module.exports = app;
